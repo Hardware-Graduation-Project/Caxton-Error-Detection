@@ -1,71 +1,88 @@
-import os
-import argparse
-import pytorch_lightning as pl
-from pytorch_lightning import loggers as pl_loggers
-from pytorch_lightning.callbacks import ModelCheckpoint
-from data.data_module import ParametersDataModule
-from model.network_module import ParametersClassifier
+if __name__ == "__main__":
+    import os
+    import argparse
+    import pytorch_lightning as pl
+    from pytorch_lightning import loggers as pl_loggers
+    from pytorch_lightning.callbacks import ModelCheckpoint
+    from data.data_module import ParametersDataModule
+    from model.network_module import ParametersClassifier
+    from train_config import *
 
-from train_config import *
+    # --- Argument parser ---
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "-s", "--seed", default=1234, type=int, help="Set seed for training"
+    )
+    parser.add_argument(
+        "-e", "--epochs", default=MAX_EPOCHS, type=int, help="Number of epochs"
+    )
+    args = parser.parse_args()
+    seed = args.seed
 
-parser = argparse.ArgumentParser()
+    # --- Set seed for reproducibility ---
+    set_seed(seed)
 
-parser.add_argument(
-    "-s", "--seed", default=1234, type=int, help="Set seed for training"
-)
-parser.add_argument(
-    "-e",
-    "--epochs",
-    default=MAX_EPOCHS,
-    type=int,
-    help="Number of epochs to train the model for",
-)
+    # --- Logging setup ---
+    logs_dir = f"logs/logs-{DATE}/{seed}/"
+    logs_dir_default = os.path.join(logs_dir, "default")
+    make_dirs(logs_dir)
+    make_dirs(logs_dir_default)
 
-args = parser.parse_args()
-seed = args.seed
+    tb_logger = pl_loggers.TensorBoardLogger(logs_dir)
 
-set_seed(seed)
-logs_dir = "logs/logs-{}/{}/".format(DATE, seed)
-logs_dir_default = os.path.join(logs_dir, "default")
+    checkpoint_callback = ModelCheckpoint(
+        monitor="val_loss",
+        dirpath=f"checkpoints/{DATE}/{seed}/",
+        filename=f"MHResAttNet-{DATASET_NAME}-{DATE}" + "-{epoch:02d}-{val_loss:.2f}-{val_acc:.2f}",
+        save_top_k=3,
+        mode="min",
+    )
 
-make_dirs(logs_dir)
-make_dirs(logs_dir_default)
+    # --- Model ---
+    model = ParametersClassifier(
+        num_classes=3,
+        lr=INITIAL_LR,
+        transfer=False,
+    )
 
-tb_logger = pl_loggers.TensorBoardLogger(logs_dir)
-checkpoint_callback = ModelCheckpoint(
-    monitor="val_loss",
-    dirpath="checkpoints/{}/{}/".format(DATE, seed),
-    filename="MHResAttNet-{}-{}-".format(DATASET_NAME, DATE)
-    + "{epoch:02d}-{val_loss:.2f}-{val_acc:.2f}",
-    save_top_k=3,
-    mode="min",
-)
+    # --- Data ---
+    data = ParametersDataModule(
+        batch_size=BATCH_SIZE,
+        data_dir=DATA_DIR,
+        csv_file=DATA_CSV,
+        dataset_name=DATASET_NAME,
+        mean=DATASET_MEAN,
+        std=DATASET_STD,
+    )
 
-model = ParametersClassifier(
-    num_classes=3,
-    lr=INITIAL_LR,
-    gpus=NUM_GPUS,
-    transfer=False,
-)
+    # --- Force data setup and print sizes ---
+   # --- Force data setup and print sizes ---
+    data.setup(stage="fit")
+    data.setup(stage="test")
 
-data = ParametersDataModule(
-    batch_size=BATCH_SIZE,
-    data_dir=DATA_DIR,
-    csv_file=DATA_CSV,
-    dataset_name=DATASET_NAME,
-    mean=DATASET_MEAN,
-    std=DATASET_STD,
-)
+    print(f"📊 Dataset sizes → Train: {len(data.train_dataset)}, Val: {len(data.val_dataset)}, Test: {len(data.test_dataset)}")
 
-trainer = pl.Trainer(
-    num_nodes=NUM_NODES,
-    gpus=NUM_GPUS,
-    distributed_backend=ACCELERATOR,
-    max_epochs=args.epochs,
-    logger=tb_logger,
-    weights_summary=None,
-    precision=16,
-    callbacks=[checkpoint_callback],
-)
+    # ✅ Debug one batch to confirm data is loading
+    print("🔍 Checking one training batch...")
+    train_loader = data.train_dataloader()
+    for batch in train_loader:
+        print("✅ Got a training batch!")
+        print("Image shape:", batch[0].shape)
+        print("Target shape:", batch[1].shape)
+        break
 
-trainer.fit(model, data)
+    # --- Trainer ---
+    trainer = pl.Trainer(
+     num_nodes=1,
+     accelerator="cpu",  # or "gpu" if you have one
+     devices=1,
+     max_epochs=args.epochs,
+     logger=tb_logger,
+     precision=32,
+     callbacks=[checkpoint_callback],
+     num_sanity_val_steps=2 if len(data.val_dataset) > 0 else 0,
+   )
+
+
+    # --- Train ---
+    trainer.fit(model, data)

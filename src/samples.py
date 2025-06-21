@@ -4,7 +4,7 @@ from PIL import Image
 from train_config import *
 import time
 
-sample_data = "data/cropped/"
+sample_data = "../data/cropped/"
 
 model = ParametersClassifier.load_from_checkpoint(
     checkpoint_path=os.environ.get("CHECKPOINT_PATH"),
@@ -26,8 +26,9 @@ print("*********************************************")
 t1 = time.time()
 
 for img_path in img_paths:
-    pil_img = Image.open(img_path)
+    pil_img = Image.open(img_path).convert("RGB")
     x = preprocess(pil_img).unsqueeze(0)
+    x = x.to(model.device)
     y_hats = model(x)
     y_hat0, y_hat1, y_hat2, y_hat3 = y_hats
 

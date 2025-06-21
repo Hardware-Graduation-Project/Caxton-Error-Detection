@@ -47,7 +47,9 @@ class ParametersDataset(Dataset):
         if torch.is_tensor(idx):
             idx = idx.tolist()
 
-        img_name = os.path.join(self.root_dir, self.dataframe.img_path[idx])
+        img_path_clean = self.dataframe.img_path[idx].strip()  # remove \n, spaces
+        img_name = os.path.normpath(os.path.join(self.root_dir, img_path_clean))
+
         
         dim = self.image_dim[0] / 2
 
@@ -55,7 +57,9 @@ class ParametersDataset(Dataset):
         top = self.dataframe.nozzle_tip_y[idx] - dim
         right = self.dataframe.nozzle_tip_x[idx] + dim
         bottom = self.dataframe.nozzle_tip_y[idx] + dim
-
+ 
+        if not os.path.isfile(img_name):
+          print(f"[❌ File missing] {img_name}")    
         image = Image.open(img_name)
         if self.pre_crop_transform:
             image = self.pre_crop_transform(image)
