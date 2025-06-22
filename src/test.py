@@ -20,7 +20,6 @@ model = ParametersClassifier.load_from_checkpoint(
     checkpoint_path=os.environ.get("CHECKPOINT_PATH"),
     num_classes=3,
     lr=INITIAL_LR,
-    gpus=1,
     transfer=False,
 )
 model.eval()
@@ -39,9 +38,8 @@ data.setup('test')
 
 trainer = pl.Trainer(
     num_nodes=1,
-    gpus=1,
-    weights_summary=None,
-    precision=16,
+    accelerator="cpu",
+    devices=1,
 )
 
 trainer.test(model, datamodule=data)
